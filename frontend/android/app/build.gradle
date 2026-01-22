@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.skillmatch.frontend'
+    namespace 'com.simats.skillmatch'
     defaultConfig {
-        applicationId 'com.skillmatch.frontend'
+        applicationId 'com.simats.skillmatch'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

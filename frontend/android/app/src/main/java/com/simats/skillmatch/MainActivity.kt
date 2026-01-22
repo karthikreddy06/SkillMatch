@@ -1,4 +1,4 @@
-package com.skillmatch.frontend
+package com.simats.skillmatch
 
 import android.os.Build
 import android.os.Bundle

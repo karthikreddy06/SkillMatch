@@ -1,47 +1,46 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delete Account - SkillMatch</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 40px 20px; text-align: center; }
-        h1 { color: #DC2626; }
-        p { margin-bottom: 20px; }
-        .warning-box { background-color: #FEF2F2; border: 1px solid #FECACA; padding: 20px; border-radius: 8px; margin: 30px 0; text-align: left; }
-        .btn { display: inline-block; background-color: #DC2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; }
-        .btn:hover { background-color: #B91C1C; }
-        input { display: block; width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        label { display: block; text-align: left; font-weight: bold; margin-top: 15px; }
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #E02424;
+        }
+
+        .warning {
+            background: #fee;
+            padding: 15px;
+            border-left: 4px solid #E02424;
+        }
     </style>
 </head>
-<body>
-    <h1>Delete Your Account</h1>
-    <p>We are sorry to see you go. If you delete your account, all your data will be permanently removed from SkillMatch.</p>
 
-    <div class="warning-box">
-        <strong>Warning:</strong> This action cannot be undone. This will delete:
-        <ul>
-            <li>Your public profile and resume</li>
-            <li>Your job application history</li>
-            <li>Your saved jobs and preferences</li>
-            <li>All active subscriptions</li>
-        </ul>
+<body>
+    <h1>Request Account Deletion</h1>
+    <div class="warning">
+        <p><strong>Warning:</strong> Deleting your account is permanent. All your data, including profile, resumes, and
+            application history, will be permanently removed.</p>
     </div>
 
-    <form onsubmit="event.preventDefault(); alert('Request submitted. We will process your deletion within 24 hours.');">
-        <label for="email">Enter your email to confirm:</label>
-        <input type="email" id="email" name="email" placeholder="john@example.com" required>
-        
-        <label for="reason">Reason for leaving (optional):</label>
-        <input type="text" id="reason" name="reason" placeholder="I found a job...">
+    <h2>How to delete your account</h2>
+    <ol>
+        <li>Open the SkillMatch App associated with your account.</li>
+        <li>Navigate to <strong>Settings</strong> > <strong>Privacy & Security</strong>.</li>
+        <li>Tap on <strong>Delete Account</strong>.</li>
+        <li>Confirm your choice.</li>
+    </ol>
 
-        <br><br>
-        <button type="submit" class="btn">Permanently Delete Account</button>
-    </form>
-
-    <p style="margin-top: 30px;">
-        <a href="privacy.html">Read our Privacy Policy</a>
-    </p>
+    <p>Alternatively, you can contact our support team at <strong>support@simats.edu.in</strong> with the subject line
+        "Delete Data Request". Please include your registered email address.</p>
 </body>
+
 </html>

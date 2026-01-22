@@ -36,9 +36,9 @@ const SignupScreen = ({ navigation }: any) => {
 
         try {
             // Using Manual Supabase Fetch to bypass network library issues
-            const { data, error } = await ManualSupabase.signUp(email, password, {
-                full_name: name,
-                phone: phone,
+            const { data, error } = await ManualSupabase.signUp(email.trim(), password, {
+                full_name: name.trim(),
+                phone: phone.trim(),
                 role: role ? role.toLowerCase() : 'seeker',
             });
 
