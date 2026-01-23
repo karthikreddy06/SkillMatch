@@ -26,3 +26,6 @@ local.properties
 # Environment variables
 .env
 .env.local
+*.zip
+android/app/build/
+android/build/
