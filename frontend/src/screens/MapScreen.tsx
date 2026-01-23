@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, Linking, Platform } from 'react-native';
-import MapView, { Marker, Callout } from 'react-native-maps';
+import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, MapPin, Building2, List, Navigation } from 'lucide-react-native';
+import { MapPin, Navigation } from 'lucide-react-native';
 import { ManualDataService } from '../services/ManualDataService';
 
 // Static coordinates for demo purposes
@@ -28,14 +28,9 @@ const MapScreen = ({ navigation }: any) => {
     const [clusters, setClusters] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
+    const webViewRef = useRef<WebView>(null);
 
-    const initialRegion = {
-        latitude: 20.5937,
-        longitude: 78.9629,
-        latitudeDelta: 15,
-        longitudeDelta: 15,
-    };
-
+    // Initial load logic
     useEffect(() => {
         fetchJobs();
     }, []);
@@ -50,9 +45,7 @@ const MapScreen = ({ navigation }: any) => {
             const grouped: Record<string, any[]> = {};
 
             (data || []).forEach((job: any) => {
-                // Normalize location string
                 let loc = job.location ? job.location.trim() : 'Remote';
-                // Simple matching for city names in string (e.g. "Mumbai, India" -> "Mumbai")
                 const cityKey = Object.keys(CITY_COORDINATES).find(city => loc.includes(city));
                 const key = cityKey || loc;
 
@@ -64,9 +57,8 @@ const MapScreen = ({ navigation }: any) => {
 
             const clusterArray = Object.keys(grouped).map(key => {
                 const coords = CITY_COORDINATES[key] || {
-                    // Random offset if unknown location
-                    latitude: initialRegion.latitude + (Math.random() - 0.5) * 5,
-                    longitude: initialRegion.longitude + (Math.random() - 0.5) * 5
+                    latitude: 20.5937 + (Math.random() - 0.5) * 5,
+                    longitude: 78.9629 + (Math.random() - 0.5) * 5
                 };
                 return {
                     location: key,
@@ -78,7 +70,6 @@ const MapScreen = ({ navigation }: any) => {
 
             setClusters(clusterArray);
             setJobs(data || []);
-
         } catch (error) {
             console.error(error);
         } finally {
@@ -86,8 +77,86 @@ const MapScreen = ({ navigation }: any) => {
         }
     };
 
-    const handleClusterPress = (cluster: any) => {
-        setSelectedLocation(cluster.location);
+
+    // Leaflet HTML Template
+    const generateHtml = (clustersData: any[]) => `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <style>
+                body { padding: 0; margin: 0; }
+                #map { width: 100%; height: 100vh; }
+                .custom-cluster {
+                    background-color: #2563EB;
+                    color: white;
+                    border-radius: 50%;
+                    text-align: center;
+                    font-weight: bold;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border: 3px solid white;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                }
+            </style>
+        </head>
+        <body>
+            <div id="map"></div>
+            <script>
+                var map = L.map('map').setView([20.5937, 78.9629], 5);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+
+                // Fix marker icons
+                delete L.Icon.Default.prototype._getIconUrl;
+                L.Icon.Default.mergeOptions({
+                    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+                    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+                    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+                });
+
+                var clusters = ${JSON.stringify(clustersData)};
+
+                clusters.forEach(function(c) {
+                    var icon = L.divIcon({
+                        className: 'custom-cluster',
+                        html: c.count,
+                        iconSize: [40, 40],
+                        iconAnchor: [20, 20]
+                    });
+
+                    var marker = L.marker([c.coordinate.latitude, c.coordinate.longitude], { icon: icon })
+                        .addTo(map)
+                        .on('click', function() {
+                            window.ReactNativeWebView.postMessage(JSON.stringify({
+                                type: 'CLUSTER_SELECTED',
+                                location: c.location
+                            }));
+                        });
+                    
+                    // Simple popup
+                    marker.bindPopup("<b>" + c.location + "</b><br>" + c.count + " Jobs");
+                });
+            </script>
+        </body>
+        </html>
+    `;
+
+
+    const handleMessage = (event: any) => {
+        try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'CLUSTER_SELECTED') {
+                setSelectedLocation(data.location);
+            }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const handleViewRoute = (latitude: number, longitude: number, label: string) => {
@@ -103,7 +172,6 @@ const MapScreen = ({ navigation }: any) => {
         }
     };
 
-
     const filteredJobs = selectedLocation
         ? clusters.find(c => c.location === selectedLocation)?.jobs || []
         : jobs;
@@ -113,39 +181,20 @@ const MapScreen = ({ navigation }: any) => {
             <SafeAreaView style={styles.headerContainer} edges={['top']}>
                 <View style={styles.header}>
                     <View style={styles.headerTextContainer}>
-                        <Text style={styles.headerTitle}>Job Map</Text>
+                        <Text style={styles.headerTitle}>Job Map (OpenStreetMap)</Text>
                         <Text style={styles.headerSubtitle}>{jobs.length} Active Jobs</Text>
                     </View>
-                    <View style={{ width: 24 }} />
                 </View>
             </SafeAreaView>
 
             <View style={styles.mapContainer}>
-                <MapView style={styles.map} initialRegion={initialRegion}>
-                    {clusters.map((cluster, index) => (
-                        <Marker
-                            key={index}
-                            coordinate={cluster.coordinate}
-                            onPress={() => handleClusterPress(cluster)}
-                        >
-                            <View style={styles.clusterMarker}>
-                                <Text style={styles.clusterCount}>{cluster.count}</Text>
-                            </View>
-                            <Callout
-                                tooltip
-                                onPress={() => handleViewRoute(cluster.coordinate.latitude, cluster.coordinate.longitude, cluster.location)}
-                            >
-                                <View style={styles.calloutContainer}>
-                                    <Text style={styles.calloutTitle}>{cluster.location}</Text>
-                                    <Text style={styles.calloutSubtitle}>{cluster.count} Jobs Available</Text>
-                                    <View style={styles.calloutAction}>
-                                        <Text style={styles.calloutActionText}>Tap to View Route</Text>
-                                    </View>
-                                </View>
-                            </Callout>
-                        </Marker>
-                    ))}
-                </MapView>
+                <WebView
+                    ref={webViewRef}
+                    originWhitelist={['*']}
+                    source={{ html: generateHtml(clusters) }}
+                    style={styles.map}
+                    onMessage={handleMessage}
+                />
             </View>
 
             <View style={styles.listContainer}>
@@ -249,62 +298,6 @@ const styles = StyleSheet.create({
     },
     map: {
         ...StyleSheet.absoluteFillObject,
-    },
-    clusterMarker: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#2563EB',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 3,
-        borderColor: 'white',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-    },
-    clusterCount: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 16,
-    },
-    calloutContainer: {
-        backgroundColor: 'white',
-        padding: 10,
-        borderRadius: 8,
-        width: 150,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 5,
-        marginBottom: 5,
-    },
-    calloutTitle: {
-        fontWeight: 'bold',
-        fontSize: 14,
-        marginBottom: 4,
-    },
-    calloutSubtitle: {
-        fontSize: 12,
-        color: '#6B7280',
-        marginBottom: 4,
-    },
-    calloutAction: {
-        marginTop: 4,
-        paddingTop: 4,
-        borderTopWidth: 1,
-        borderTopColor: '#F3F4F6',
-        width: '100%',
-        alignItems: 'center',
-    },
-    calloutActionText: {
-        fontSize: 12,
-        color: '#2563EB',
-        fontWeight: '600',
     },
     listContainer: {
         flex: 1,
