@@ -1,130 +1,111 @@
 import React, { useEffect, useState, Platform } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Dimensions, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native'; // Removed unused imports
 import { LinearGradient } from 'expo-linear-gradient';
-import { Zap, Gem, Check } from 'lucide-react-native';
+import { Zap, Check } from 'lucide-react-native'; // Removed Gem
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-    initConnection,
-    endConnection,
-    finishTransaction,
-    purchaseErrorListener,
-    purchaseUpdatedListener,
-    approveManagedPurchaseAndroid,
-    ProductPurchase,
-    PurchaseError,
-    SubscriptionPurchase,
-    getIds,
-    getSubscriptions,
-    requestSubscription,
-    acknowledgePurchaseAndroid,
-    flushFailedPurchasesCachedAsPendingAndroid,
-} from 'react-native-iap';
+import Constants, { ExecutionEnvironment } from 'expo-constants'; // Import Expo Constants
 
-const { width } = Dimensions.get('window');
-
-// SKUs from your Kotlin code
-const subscriptionSkus = Platform.select({
-    android: ['univault_premium_subscription'],
-    default: [],
-});
-
-const testSkus = Platform.select({
-    android: ['android.test.purchased'], // Google Play Test Product
-    default: [],
-});
+// Define types locally or import type only
+import type { SubscriptionPurchase, ProductPurchase, PurchaseError } from 'react-native-iap';
 
 const SubscriptionScreen = ({ navigation }: any) => {
     const [loading, setLoading] = useState(false);
     const [realSubscriptionAvailable, setRealSubscriptionAvailable] = useState(false);
     const [testProductAvailable, setTestProductAvailable] = useState(false);
+    const [isExpoGo, setIsExpoGo] = useState(false);
+
+    // IAP Module Reference (loaded dynamically)
+    const [RNIap, setRNIap] = useState<any>(null);
+
+    // SKUs
+    const subscriptionSkus = Platform.select({
+        android: ['univault_premium_subscription'],
+        default: [],
+    });
+
+    const testSkus = Platform.select({
+        android: ['android.test.purchased'],
+        default: [],
+    });
 
     useEffect(() => {
+        // Check if running in Expo Go
+        const isGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+        setIsExpoGo(isGo);
+
+        if (isGo) {
+            console.log("Running in Expo Go: IAP disabled");
+            return;
+        }
+
         let purchaseUpdateSubscription: any = null;
         let purchaseErrorSubscription: any = null;
 
         const initializeIAP = async () => {
             try {
-                await initConnection();
+                // Dynamic Require to avoid crash in Expo Go
+                const IAP = require('react-native-iap');
+                setRNIap(IAP); // Store reference
+
+                await IAP.initConnection();
                 if (Platform.OS === 'android') {
-                    await flushFailedPurchasesCachedAsPendingAndroid();
+                    await IAP.flushFailedPurchasesCachedAsPendingAndroid();
                 }
 
                 // Listeners
-                purchaseUpdateSubscription = purchaseUpdatedListener(async (purchase: SubscriptionPurchase | ProductPurchase) => {
+                purchaseUpdateSubscription = IAP.purchaseUpdatedListener(async (purchase: SubscriptionPurchase | ProductPurchase) => {
                     const receipt = purchase.transactionReceipt;
                     if (receipt) {
                         try {
                             if (Platform.OS === 'android') {
-                                // Acknowledge the purchase (replicating handlePurchase -> acknowledgePurchase in Kotlin)
-                                await acknowledgePurchaseAndroid({ token: purchase.purchaseToken, developerPayload: purchase.developerPayloadAndroid });
+                                await IAP.acknowledgePurchaseAndroid({ token: purchase.purchaseToken, developerPayload: purchase.developerPayloadAndroid });
                             } else {
-                                await finishTransaction({ purchase, isConsumable: false });
+                                await IAP.finishTransaction({ purchase, isConsumable: false });
                             }
-                            // Success!
                             await onSubscriptionSuccess();
                         } catch (ackErr) {
                             console.warn('ackErr', ackErr);
-                            // Even if ack fails, if we have receipt, we might want to count it or retry.
-                            // But usually ack is required for it to stick.
                         }
                     }
                 });
 
-                purchaseErrorSubscription = purchaseErrorListener((error: PurchaseError) => {
+                purchaseErrorSubscription = IAP.purchaseErrorListener((error: PurchaseError) => {
                     setLoading(false);
                     console.warn('purchaseErrorListener', error);
-                    // Mapped somewhat to your Kotlin error handling logic
-                    if (error.responseCode === 1) { // User canceled
-                        // Silent or handled
-                    } else {
+                    if (error.responseCode !== 1) { // 1 = User cancelled
                         Alert.alert('Purchase Failed', error.message);
                     }
                 });
 
-                // 1. Try to fetch Real Subscription
+                // Fetch Products
                 if (subscriptionSkus && subscriptionSkus.length > 0) {
                     try {
-                        const subs = await getSubscriptions({ skus: subscriptionSkus });
-                        console.log("Subscriptions fetched:", subs);
-                        if (subs && subs.length > 0) {
-                            setRealSubscriptionAvailable(true);
-                        }
-                    } catch (subErr) {
-                        console.log("Real subscription check failed or empty", subErr);
-                    }
+                        const subs = await IAP.getSubscriptions({ skus: subscriptionSkus });
+                        if (subs && subs.length > 0) setRealSubscriptionAvailable(true);
+                    } catch (e) { console.log("Sub fetch failed", e); }
                 }
 
-                // 2. Fetch Test Product (Fallback)
                 if (testSkus && testSkus.length > 0) {
                     try {
-                        const products = await getProducts({ skus: testSkus });
-                        console.log("Test products fetched:", products);
-                        if (products && products.length > 0) {
-                            setTestProductAvailable(true);
-                        }
-                    } catch (prodErr) {
-                        console.log("Test product check failed", prodErr);
-                    }
+                        const products = await IAP.getProducts({ skus: testSkus });
+                        if (products && products.length > 0) setTestProductAvailable(true);
+                    } catch (e) { console.log("Prod fetch failed", e); }
                 }
 
             } catch (err) {
-                console.warn(err);
+                console.warn("IAP Init Failed:", err);
             }
         };
 
         initializeIAP();
 
         return () => {
-            if (purchaseUpdateSubscription) {
-                purchaseUpdateSubscription.remove();
-                purchaseUpdateSubscription = null;
-            }
-            if (purchaseErrorSubscription) {
-                purchaseErrorSubscription.remove();
-                purchaseErrorSubscription = null;
-            }
-            endConnection();
+            if (purchaseUpdateSubscription) purchaseUpdateSubscription.remove();
+            if (purchaseErrorSubscription) purchaseErrorSubscription.remove();
+            // We can't easily call endConnection inside cleanup if IAP variable is local scope, 
+            // but in practice unrelated here. 
+            const IAP = require('react-native-iap');
+            if (IAP) IAP.endConnection();
         };
     }, []);
 
@@ -146,38 +127,40 @@ const SubscriptionScreen = ({ navigation }: any) => {
 
     const handleSubscribe = async () => {
         setLoading(true);
-        try {
-            if (realSubscriptionAvailable && subscriptionSkus && subscriptionSkus.length > 0) {
-                // Use Real Subscription
-                await requestSubscription({ sku: subscriptionSkus[0] });
-            } else if (testProductAvailable && testSkus && testSkus.length > 0) {
-                // Use Test Product (In-App Purchase flow, not subscription)
-                console.log("Using Test SKU");
-                await requestPurchase({ sku: testSkus[0] });
-            } else {
-                setLoading(false);
-                // Force try test sku if logic fails but user clicked (development fallback)
-                // or show detailed error
-                if (__DEV__) {
-                    await requestPurchase({ sku: 'android.test.purchased' });
-                    return;
-                }
 
-                Alert.alert(
-                    "Setup Required",
-                    "Real subscription not found. To test, please ensure you are in the Internal Test Track on Play Console."
-                );
+        // Expo Go Mock Flow
+        if (isExpoGo) {
+            setTimeout(async () => {
+                await onSubscriptionSuccess();
+            }, 1000);
+            return;
+        }
+
+        // Native Flow
+        try {
+            if (!RNIap) {
+                Alert.alert("Error", "IAP not initialized");
+                setLoading(false);
+                return;
+            }
+
+            if (realSubscriptionAvailable && subscriptionSkus && subscriptionSkus.length > 0) {
+                await RNIap.requestSubscription({ sku: subscriptionSkus[0] });
+            } else if (testProductAvailable && testSkus && testSkus.length > 0) {
+                await RNIap.requestPurchase({ sku: testSkus[0] });
+            } else {
+                // Fallback for testing on device without configured products
+                if (__DEV__) {
+                    await RNIap.requestPurchase({ sku: 'android.test.purchased' });
+                } else {
+                    setLoading(false);
+                    Alert.alert("Setup Required", "No subscription products found.");
+                }
             }
         } catch (err: any) {
             setLoading(false);
-            console.warn(err.code, err.message);
-            if (err.code === 'E_USER_CANCELLED') {
-                // User cancelled
-            } else {
-                Alert.alert(
-                    "Subscription Error",
-                    "Could not start subscription. Make sure you are signed in to the Play Store."
-                );
+            if (err.code !== 'E_USER_CANCELLED') {
+                Alert.alert("Error", "Could not start subscription.");
             }
         }
     };
@@ -189,37 +172,32 @@ const SubscriptionScreen = ({ navigation }: any) => {
     return (
         <View style={styles.container}>
             <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-                {/* Gradient Background Overlay - approximate */}
-                <LinearGradient
-                    colors={['#1F2937', '#0A0E27']}
-                    style={styles.gradientOverlay}
-                />
+                <LinearGradient colors={['#1F2937', '#0A0E27']} style={styles.gradientOverlay} />
 
                 <View style={styles.contentContainer}>
-                    {/* Floating Logo Container */}
                     <View style={styles.logoCard}>
                         <View style={styles.logoInner}>
-                            {/* Placeholder for App Logo - using Text for now or basic Icon */}
                             <Text style={styles.logoText}>SM</Text>
                             <Text style={styles.sparkle}>✨</Text>
                         </View>
                     </View>
 
-                    {/* Title Section */}
                     <Text style={styles.titleText}>SkillMatch Premium</Text>
                     <View style={styles.premiumBadgeContainer}>
                         <Text style={styles.premiumBadgeText}>PREMIUM</Text>
                     </View>
 
+                    {isExpoGo && (
+                        <View style={{ backgroundColor: '#eab308', padding: 10, borderRadius: 8, marginTop: 10 }}>
+                            <Text style={{ color: 'black', fontWeight: 'bold' }}>Expo Go Mode: Payment is Simulated</Text>
+                        </View>
+                    )}
+
                     <Text style={styles.subtitleText}>
                         Unlock unlimited potential with premium features designed for your success
                     </Text>
 
-                    {/* Features Container */}
                     <View style={styles.featuresContainer}>
-
-                        {/* Feature Card 1: Ad-Free */}
                         <View style={styles.featureCard}>
                             <Text style={styles.featureIcon}>⚡</Text>
                             <View style={styles.featureTextParams}>
@@ -229,7 +207,6 @@ const SubscriptionScreen = ({ navigation }: any) => {
                             <Check size={24} color="#4CAF50" strokeWidth={3} />
                         </View>
 
-                        {/* Feature Card 2: Exclusive Tools */}
                         <View style={styles.featureCard}>
                             <Text style={styles.featureIcon}>💎</Text>
                             <View style={styles.featureTextParams}>
@@ -238,16 +215,13 @@ const SubscriptionScreen = ({ navigation }: any) => {
                             </View>
                             <Check size={24} color="#4CAF50" strokeWidth={3} />
                         </View>
-
                     </View>
 
-                    {/* Price Card */}
                     <View style={styles.priceCard}>
                         <Text style={styles.priceText}>₹499 / Year</Text>
                         <Text style={styles.priceSubtitle}>Best Value Offer</Text>
                     </View>
 
-                    {/* Subscribe Button */}
                     <TouchableOpacity
                         style={[styles.subscribeButton, loading && { opacity: 0.7 }]}
                         onPress={handleSubscribe}
@@ -257,26 +231,22 @@ const SubscriptionScreen = ({ navigation }: any) => {
                             <ActivityIndicator color="black" />
                         ) : (
                             <>
-                                <Text style={styles.subscribeButtonText}>Start Premium</Text>
+                                <Text style={styles.subscribeButtonText}>{isExpoGo ? "Simulate Purchase" : "Start Premium"}</Text>
                                 <Zap size={20} color="black" fill="black" />
                             </>
                         )}
                     </TouchableOpacity>
 
-                    {/* Terms Text */}
                     <Text style={styles.termsText}>
                         By continuing, you agree to our Terms & Privacy Policy
                     </Text>
 
-                    {/* Spacer */}
                     <View style={{ height: 60 }} />
 
-                    {/* Skip Button */}
                     <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
                         <Text style={styles.skipButtonText}>Maybe later</Text>
                     </TouchableOpacity>
                 </View>
-
             </ScrollView>
         </View>
     );
@@ -336,7 +306,7 @@ const styles = StyleSheet.create({
         right: 10,
     },
     titleText: {
-        fontSize: 28, // Scaled down slightly from XML 36sp
+        fontSize: 28,
         fontWeight: 'bold',
         color: 'white',
         letterSpacing: 0.5,
@@ -344,7 +314,7 @@ const styles = StyleSheet.create({
     },
     premiumBadgeContainer: {
         marginTop: 8,
-        backgroundColor: 'rgba(255, 215, 0, 0.1)', // Gold tint bg
+        backgroundColor: 'rgba(255, 215, 0, 0.1)',
         paddingHorizontal: 16,
         paddingVertical: 6,
         borderRadius: 4,
@@ -352,7 +322,7 @@ const styles = StyleSheet.create({
     premiumBadgeText: {
         fontSize: 14,
         fontWeight: 'bold',
-        color: '#FFD700', // Gold
+        color: '#FFD700',
         letterSpacing: 1.5,
     },
     subtitleText: {
@@ -458,7 +428,7 @@ const styles = StyleSheet.create({
     skipButtonText: {
         fontSize: 14,
         color: '#7C8AA8',
-        textTransform: 'lowercase', // "Maybe later" style
+        textTransform: 'lowercase',
     },
 });
 
